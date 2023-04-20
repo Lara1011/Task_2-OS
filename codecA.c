@@ -1,7 +1,6 @@
 //
 // Created by malaklinux on 4/19/23.
 //
-#include <ctype.h>
 #include "codecA.h"
 
 char *convertToUpperOrLower(char *str) {
