@@ -5,20 +5,17 @@
 #include "codecA.h"
 
 char *convertToUpperOrLower(char *str) {
-    int i = 0;
     while ('\0' != *str) {
-        if (str[i] >= 'a' && str[i] <= 'z') {
-            // str[i] = toupper(str[i]);
-            str[i] = str[i] - ('a' - 'A');
-        } else if (str[i] >= 'A' && str[i] <= 'Z') {
-            //str[i] = tolower(str[i]);
-            str[i] = str[i] + ('a' - 'A');
+        if (*str >= 'a' && *str <= 'z') {
+            *str = toupper(*str);
+        } else if (*str >= 'A' && *str <= 'Z') {
+            *str = tolower(*str);
         }
         str++;
-        i++;
     }
     return str;
 }
+
 
 
 
