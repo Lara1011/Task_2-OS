@@ -2,7 +2,10 @@ CC = gcc
 AR = ar
 FLAGS = -Wall -g -fPIC
 
-all: cmp copy encode decode codecA.so codecB.so
+all: stshell cmp copy encode decode codecA.so codecB.so
+
+stshell: stshell.c
+	$(CC) $(FLAGS) -o stshell stshell.c
 
 cmp: cmp.c
 	$(CC) $(FLAGS) -o cmp cmp.c
@@ -25,4 +28,4 @@ codecB.so: codecB.c
 .PHONY: clean all
 
 clean:
-	rm -f *.o *.so cmp copy encode decode
+	rm -f *.o *.so stshell cmp copy encode decode
