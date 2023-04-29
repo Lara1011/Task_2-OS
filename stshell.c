@@ -1,7 +1,6 @@
 //
 // Created by malaklinux on 4/21/23.
 //
-//
 
 #include "stshell.h"
 
@@ -47,7 +46,7 @@ void execute_command() {
 
     // Execute the command
     if (execvp(args[0], args) < 0) {
-        printf("%s: Command not found\n", args[0]);
+        fprintf(stderr, "Command not found\n");
         exit(1);
     }
 }
@@ -90,13 +89,13 @@ void execute_pipeline(int pipeline_num) {
     } else {
         pid_t pid;
         if (pipe(pipe_fds[pipeline_num]) < 0) {
-            printf("Pipe error\n");
+            fprintf(stderr, "Pipe error\n");
             exit(1);
         }
 
         pid = fork();
         if (pid < 0) {
-            printf("Fork error\n");
+            fprintf(stderr, "Fork error\n");
             exit(1);
         } else if (pid == 0) {
             // Child process
@@ -173,8 +172,9 @@ int main() {
                 // Parent process
                 wait(NULL);
             } else {
+
                 // Fork error
-                printf("Fork error\n");
+                fprintf(stderr, "Fork error\n");
                 exit(1);
             }
         }
