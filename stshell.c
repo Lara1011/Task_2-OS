@@ -3,9 +3,7 @@
 //
 
 #include "stshell.h"
-//ls -l | grep aaa | wc
 
-// Add a global variable to track if a command is running
 volatile sig_atomic_t cmd_running = 0;
 
 void handle_sigint() {
@@ -21,10 +19,9 @@ void handle_sigint() {
         fflush(stdout);
     } else {
         printf("\n");
-        cmd_running = 0; // Set cmd_running to 0 after handling SIGINT
+        cmd_running = 0;
     }
 }
-
 
 int parse_cmd(char *cmd, char **args, char **next_cmd, int *output_type) {
     char *token = strtok(cmd, " \n\t");
@@ -118,7 +115,6 @@ void exec_with_multiple_pipes(char **args, char **next_args, char **third_args) 
     waitpid(pid3, NULL, 0);
 }
 
-
 void exec_with_redirection(char **args, char *file, int output_type) {
     int fd;
 
@@ -167,7 +163,7 @@ int main() {
     gethostname(hostname, MAX_CMD_LENGTH - 1);
 
     while (1) {
-        if (!cmd_running) { // Only print the shell prompt if cmd_running is 0
+        if (!cmd_running) {
             char cwd[MAX_CMD_LENGTH];
             getcwd(cwd, sizeof(cwd));
             printf("%s@%s:%s$ ", pw->pw_name, hostname, cwd);
@@ -204,11 +200,11 @@ int main() {
                 parse_cmd(third_cmd, third_args, NULL, NULL);
             }
         }
-        cmd_running = 1; // Set cmd_running to 1 before fork
+        cmd_running = 1;
         pid = fork();
 
         if (pid == 0) { // child process
-            cmd_running = 0; // Set cmd_running to 0 in the child process
+            cmd_running = 0;
             if (output_type > 0) {
                 exec_with_redirection(args, next_cmd, output_type);
             } else if (pipe_found) {
@@ -219,7 +215,7 @@ int main() {
                 exit(EXIT_FAILURE);
             }
         } else if (pid > 0) { // parent process
-            if (!pipe_found) { // Only wait for the child process if there's no pipe
+            if (!pipe_found) {
                 waitpid(pid, &status, 0);
                 if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
                     exit(EXIT_FAILURE);
