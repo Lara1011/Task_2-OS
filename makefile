@@ -2,6 +2,8 @@ CC = gcc
 AR = ar
 FLAGS = -Wall -g -fPIC
 
+default: stshell cmp copy encode decode codecA.so codecB.so
+
 all: stshell cmp copy encode decode codecA.so codecB.so
 
 stshell: stshell.c
