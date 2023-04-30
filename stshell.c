@@ -1,7 +1,6 @@
 //
 // Created by malaklinux on 4/21/23.
 //
-
 #include "stshell.h"
 
 volatile sig_atomic_t cmd_running = 0;
