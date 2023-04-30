@@ -3,7 +3,7 @@
 //
 
 #include "stshell.h"
-
+//ls -l | grep aaa | wc
 
 // Add a global variable to track if a command is running
 volatile sig_atomic_t cmd_running = 0;
@@ -21,8 +21,10 @@ void handle_sigint() {
         fflush(stdout);
     } else {
         printf("\n");
+        cmd_running = 0; // Set cmd_running to 0 after handling SIGINT
     }
 }
+
 
 int parse_cmd(char *cmd, char **args, char **next_cmd, int *output_type) {
     char *token = strtok(cmd, " \n\t");
@@ -159,22 +161,42 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-
     struct passwd *pw = getpwuid(getuid());
     char hostname[MAX_CMD_LENGTH];
     hostname[MAX_CMD_LENGTH - 1] = '\0';
     gethostname(hostname, MAX_CMD_LENGTH - 1);
 
     while (1) {
-        char cwd[MAX_CMD_LENGTH];
-        getcwd(cwd, sizeof(cwd));
-        printf("%s@%s:%s$ ", pw->pw_name, hostname, cwd);
+        if (!cmd_running) { // Only print the shell prompt if cmd_running is 0
+            char cwd[MAX_CMD_LENGTH];
+            getcwd(cwd, sizeof(cwd));
+            printf("%s@%s:%s$ ", pw->pw_name, hostname, cwd);
+            fflush(stdout);
+        }
+
         fgets(cmd, MAX_CMD_LENGTH, stdin);
+
+        int pipe_found = parse_cmd(cmd, args, &next_cmd, &output_type);
+
         if (strncmp(cmd, "exit", 4) == 0 && (cmd[4] == ' ' || cmd[4] == '\n' || cmd[4] == '\t' || cmd[4] == '\0')) {
+            if (cmd_running) {
+                fclose(stdin);
+                kill(pid, SIGTERM);
+                waitpid(pid, &status, 0);
+            }
             break;
         }
 
-        int pipe_found = parse_cmd(cmd, args, &next_cmd, &output_type);
+        if (strncmp(cmd, "cd", 2) == 0 && (cmd[2] == ' ' || cmd[2] == '\n' || cmd[2] == '\t' || cmd[2] == '\0')) {
+            char *path = args[1];
+            if (!path || strcmp(path, "~") == 0) {
+                path = pw->pw_dir;
+            }
+            if (chdir(path) != 0) {
+                perror("Error changing directory");
+            }
+            continue;
+        }
 
         if (pipe_found) {
             pipe_found = parse_cmd(next_cmd, next_args, &third_cmd, &output_type);
@@ -197,8 +219,13 @@ int main() {
                 exit(EXIT_FAILURE);
             }
         } else if (pid > 0) { // parent process
-            wait(&status);
-            cmd_running = 0; // Set cmd_running to 0 after the command has finished
+            if (!pipe_found) { // Only wait for the child process if there's no pipe
+                waitpid(pid, &status, 0);
+                if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+                    exit(EXIT_FAILURE);
+                }
+                cmd_running = 0;
+            }
         } else { // error
             perror("Error forking");
             exit(EXIT_FAILURE);
