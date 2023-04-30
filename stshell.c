@@ -4,185 +4,208 @@
 
 #include "stshell.h"
 
-void signal_handler(int signal_number) {
-    CTRL_C = false;
-    if (signal_number == SIGINT) {  //CTRL+C = 2
-        CTRL_C = true;
-        printf("\n");
-        char *user = getlogin();
-        char cwd[MAX_INPUT_LENGTH];
+
+// Add a global variable to track if a command is running
+volatile sig_atomic_t cmd_running = 0;
+
+void handle_sigint() {
+    if (!cmd_running) {
+        struct passwd *pw = getpwuid(getuid());
+        char hostname[MAX_CMD_LENGTH];
+        hostname[MAX_CMD_LENGTH - 1] = '\0';
+        gethostname(hostname, MAX_CMD_LENGTH - 1);
+        char cwd[MAX_CMD_LENGTH];
         getcwd(cwd, sizeof(cwd));
 
-        printf("%s:~%s$ ", user, cwd);
+        printf("\n%s@%s:%s$ ", pw->pw_name, hostname, cwd);
         fflush(stdout);
-
+    } else {
+        printf("\n");
     }
 }
 
-void execute_command() {
-    CTRL_C = false;
-    // Close all pipes before executing the command
-    for (int i = 0; i < num_pipes; i++) {
-        close(pipe_fds[i][0]);
-        close(pipe_fds[i][1]);
-    }
-
-    // Redirect input/output if necessary
-    if (strlen(input_file) > 0) {
-        int input_fd = open(input_file, O_RDONLY);
-        dup2(input_fd, STDIN_FILENO);
-        close(input_fd);
-    }
-    if (strlen(output_file) > 0) {
-        int output_fd;
-        if (output_mode == 0) {
-            output_fd = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-        } else {
-            output_fd = open(output_file, O_WRONLY | O_CREAT | O_APPEND, 0666);
-        }
-        dup2(output_fd, STDOUT_FILENO);
-        close(output_fd);
-    }
-
-    // Execute the command
-    if (execvp(args[0], args) < 0) {
-        fprintf(stderr, "Command not found\n");
-        exit(1);
-    }
-}
-
-void parse_command(char *command) {
-    CTRL_C = false;
-    char *token = strtok(command, " ");
+int parse_cmd(char *cmd, char **args, char **next_cmd, int *output_type) {
+    char *token = strtok(cmd, " \n\t");
     int i = 0;
+    int pipe_found = 0;
+
     while (token != NULL) {
         if (strcmp(token, ">") == 0) {
-            // Output redirection
-            token = strtok(NULL, " ");
-            strcpy(output_file, token);
-            output_mode = 0;
+            *output_type = 1;
+            token = strtok(NULL, " \n\t");
+            *next_cmd = token;
+            break;
         } else if (strcmp(token, ">>") == 0) {
-            // Output redirection (append mode)
-            token = strtok(NULL, " ");
-            strcpy(output_file, token);
-            output_mode = 1;
-        } else if (strcmp(token, "<") == 0) {
-            // Input redirection
-            token = strtok(NULL, " ");
-            strcpy(input_file, token);
+            *output_type = 2;
+            token = strtok(NULL, " \n\t");
+            *next_cmd = token;
+            break;
         } else if (strcmp(token, "|") == 0) {
-            // Pipeline
-            num_pipes++;
+            pipe_found = 1;
+            args[i] = NULL;
+            *next_cmd = strtok(NULL, "");
+            break;
         } else {
-            args[i] = token;
-            i++;
+            args[i++] = token;
         }
-        token = strtok(NULL, " ");
+        token = strtok(NULL, " \n\t");
     }
+
     args[i] = NULL;
+    return pipe_found;
 }
 
-void execute_pipeline(int pipeline_num) {
-    CTRL_C = false;
-    if (pipeline_num == num_pipes) {
-        execute_command();
-    } else {
-        pid_t pid;
-        if (pipe(pipe_fds[pipeline_num]) < 0) {
-            fprintf(stderr, "Pipe error\n");
-            exit(1);
-        }
+void exec_with_multiple_pipes(char **args, char **next_args, char **third_args) {
+    int pipefd1[2];
+    int pipefd2[2];
 
-        pid = fork();
-        if (pid < 0) {
-            fprintf(stderr, "Fork error\n");
-            exit(1);
-        } else if (pid == 0) {
-            // Child process
-            close(pipe_fds[pipeline_num][0]);
-            dup2(pipe_fds[pipeline_num][1], STDOUT_FILENO);
-            close(pipe_fds[pipeline_num][1]);
-            execute_pipeline(pipeline_num + 1);
-
-        } else {
-            // Parent process
-            close(pipe_fds[pipeline_num][1]);
-            dup2(pipe_fds[pipeline_num][0], STDIN_FILENO);
-            close(pipe_fds[pipeline_num][0]);
-            wait(NULL);
-            execute_command();
-        }
+    if (pipe(pipefd1) == -1) {
+        perror("Error creating pipe");
+        exit(EXIT_FAILURE);
     }
+
+    if (pipe(pipefd2) == -1) {
+        perror("Error creating pipe");
+        exit(EXIT_FAILURE);
+    }
+
+    pid_t pid1 = fork();
+
+    if (pid1 == 0) {
+        dup2(pipefd1[1], STDOUT_FILENO);
+        close(pipefd1[0]);
+        close(pipefd1[1]);
+        execvp(args[0], args);
+        perror("Error executing command");
+        exit(EXIT_FAILURE);
+    }
+
+    pid_t pid2 = fork();
+
+    if (pid2 == 0) {
+        dup2(pipefd1[0], STDIN_FILENO);
+        dup2(pipefd2[1], STDOUT_FILENO);
+        close(pipefd1[0]);
+        close(pipefd1[1]);
+        close(pipefd2[0]);
+        close(pipefd2[1]);
+        execvp(next_args[0], next_args);
+        perror("Error executing command");
+        exit(EXIT_FAILURE);
+    }
+
+    close(pipefd1[0]);
+    close(pipefd1[1]);
+
+    pid_t pid3 = fork();
+
+    if (pid3 == 0) {
+        dup2(pipefd2[0], STDIN_FILENO);
+        close(pipefd2[0]);
+        close(pipefd2[1]);
+        execvp(third_args[0], third_args);
+        perror("Error executing command");
+        exit(EXIT_FAILURE);
+    }
+
+    close(pipefd2[0]);
+    close(pipefd2[1]);
+
+    waitpid(pid1, NULL, 0);
+    waitpid(pid2, NULL, 0);
+    waitpid(pid3, NULL, 0);
 }
 
+
+void exec_with_redirection(char **args, char *file, int output_type) {
+    int fd;
+
+    if (output_type == 1) {
+        fd = open(file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    } else {
+        fd = open(file, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    }
+
+    if (fd == -1) {
+        perror("Error opening file");
+        exit(EXIT_FAILURE);
+    }
+
+    dup2(fd, STDOUT_FILENO);
+    close(fd);
+    execvp(args[0], args);
+    perror("Error executing command");
+    exit(EXIT_FAILURE);
+}
 
 int main() {
-    CTRL_C = false;
-    signal(SIGINT, signal_handler);
+    char cmd[MAX_CMD_LENGTH];
+    char *args[MAX_ARGS];
+    char *next_cmd;
+    char *next_args[MAX_ARGS];
+    char *third_cmd;
+    char *third_args[MAX_ARGS];
+    int output_type = 0;
+    pid_t pid;
+    int status;
+
+    // Set up signal handler for SIGINT (Ctrl+C)
+    struct sigaction sa;
+    sa.sa_handler = handle_sigint;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    if (sigaction(SIGINT, &sa, NULL) == -1) {
+        perror("Error setting up signal handler");
+        exit(EXIT_FAILURE);
+    }
+
+
+    struct passwd *pw = getpwuid(getuid());
+    char hostname[MAX_CMD_LENGTH];
+    hostname[MAX_CMD_LENGTH - 1] = '\0';
+    gethostname(hostname, MAX_CMD_LENGTH - 1);
+
     while (1) {
-        // Reset variables
-        num_pipes = 0;
-        input_file[0] = '\0';
-        output_file[0] = '\0';
-        output_mode = 0;
-
-        char *user = getlogin(); // get user name
-        char cwd[MAX_INPUT_LENGTH]; // buffer to hold current working directory
-        getcwd(cwd, sizeof(cwd)); // get current working directory
-        if (!CTRL_C)
-            printf("%s:~%s$ ", user, cwd); // display user name and current directory in prompt
-
-        // Read input
-        char command[MAX_INPUT_LENGTH];
-        if (fgets(command, MAX_INPUT_LENGTH, stdin) == NULL) {
-            printf("\n");
-            exit(0);
+        char cwd[MAX_CMD_LENGTH];
+        getcwd(cwd, sizeof(cwd));
+        printf("%s@%s:%s$ ", pw->pw_name, hostname, cwd);
+        fgets(cmd, MAX_CMD_LENGTH, stdin);
+        if (strncmp(cmd, "exit", 4) == 0 && (cmd[4] == ' ' || cmd[4] == '\n' || cmd[4] == '\t' || cmd[4] == '\0')) {
+            break;
         }
 
-        // Remove newline character
-        command[strlen(command) - 1] = '\0';
+        int pipe_found = parse_cmd(cmd, args, &next_cmd, &output_type);
 
-        // Parse the command
-        parse_command(command);
-
-        // Check for built-in commands
-        if (strcmp(args[0], "exit") == 0) {
-            exit(0);
-        } else if (strcmp(args[0], "cd") == 0) {
-            if (args[1] == NULL) {
-                // no directory specified, navigate to home directory
-                char *home_dir = getenv("HOME");
-                if (chdir(home_dir) != 0) {
-                    printf("Error: failed to navigate to home directory\n");
-                }
-            } else {
-                // directory specified, change to that directory
-                if (chdir(args[1]) != 0) {
-                    printf("Error: directory not found\n");
-                }
-            }
-        } else {
-            // Execute the command
-            pid_t pid = fork();
-            if (pid == 0) {
-                // Child process
-                execute_pipeline(0);
-                exit(0);
-            } else if (pid > 0) {
-                // Parent process
-                wait(NULL);
-            } else {
-
-                // Fork error
-                fprintf(stderr, "Fork error\n");
-                exit(1);
+        if (pipe_found) {
+            pipe_found = parse_cmd(next_cmd, next_args, &third_cmd, &output_type);
+            if (pipe_found) {
+                parse_cmd(third_cmd, third_args, NULL, NULL);
             }
         }
+        cmd_running = 1; // Set cmd_running to 1 before fork
+        pid = fork();
 
-        // Check if CTRL+C was pressed
-        if (CTRL_C) {
-            // Reset CTRL+C flag
-            CTRL_C = false;
+        if (pid == 0) { // child process
+            cmd_running = 0; // Set cmd_running to 0 in the child process
+            if (output_type > 0) {
+                exec_with_redirection(args, next_cmd, output_type);
+            } else if (pipe_found) {
+                exec_with_multiple_pipes(args, next_args, third_args);
+            } else {
+                execvp(args[0], args);
+                perror("Error executing command");
+                exit(EXIT_FAILURE);
+            }
+        } else if (pid > 0) { // parent process
+            wait(&status);
+            cmd_running = 0; // Set cmd_running to 0 after the command has finished
+        } else { // error
+            perror("Error forking");
+            exit(EXIT_FAILURE);
         }
     }
+
+    return 0;
 }
+
+
