@@ -1,14 +1,83 @@
-# STShell (Student Shell)
+# Files Operations, Dynamic Libraries, And Basic Shell
 
-STShell is a simple shell program for Linux, designed to provide basic functionality such as running CMD tools, handling
-signals, output redirection, and piping.
+A collection of command-line tools and libraries for file operations, dynamic libraries, and basic shell operations.
 
+## Table of Contents
+* [System Environment](#system-environment)
+* [Part A: File Operations](#part-a-file-operations)
+  * cmp
+  * copy
+* [Part B: Dynamic Libraries](#part-b-dynamic-libraries)
+  * codecA
+  * codecB
+  * encode
+  * decode
+* [Part C: Basic Shell](#part-c-basic-shell)
+  * Running CMD tools
+  * Stopping running tool with Ctrl+C
+  * Redirecting output and piping
+  * Exiting the shell
 ---
 
 ## System Environment
 
-This shell program is designed to run on `Linux systems`. The specific flavor of Linux is not restricted as long as the
+This small project is designed to run on `Linux systems`. The specific flavor of Linux is not restricted as long as the
 system supports the standard libraries and system calls used in the code.
+
+---
+
+### Part A: File Operations
+
+`cmp` is a command-line tool to compare two files. It returns 0 if the files are equal and 1 if they are different.
+
+usage: `./cmp <file1> <file2> [-v] [-i]`
+
+  - `-v`: Enable verbose output. The tool will print "equal" or "distinct" in addition to the return value.
+  - `-i`: Ignore case when comparing the files. For example, "AAA" and "aaa" will be considered equal.
+
+`copy` is a command-line tool to copy a file to another location and/or with a different name. It returns 0 on success and 1 on failure.
+
+usage: `./copy <source_file> <destination_file> [-v] [-f]`
+
+  - `-v`: Enable verbose output. The tool will print "success" if the file is copied, "target file exists" if the destination file already exists, or "general failure" on other errors.
+  - `-f`: Force the tool to overwrite the target file if it already exists.
+
+---
+
+### Part B: Dynamic Libraries
+
+`codecA` is a shared library that provides encoding and decoding functions. The encoding function converts all lowercase characters to uppercase and all uppercase characters to lowercase. All other characters remain unchanged.
+
+`codecB` is a shared library that provides encoding and decoding functions. The encoding function shifts each character to the 3rd next character by adding 3 to the ASCII value.
+
+Both libraries are reversible, meaning that decoding an encoded string will result in the original string.
+
+`encode` is a command-line tool that utilizes the codec libraries to encode a given message.
+
+usage: `./encode <codec> <message>`
+
+Example:
+
+    $ ./encode codecA aaaBBB
+    
+will return `AAAbbb`.
+
+`decode` is a command-line tool that utilizes the codec libraries to decode a given message.
+
+usage: `./decode <codec> <message>`
+
+Example:
+
+    $ ./decode codecB EEEddd
+    
+will return `BBBaaa`.
+
+---
+
+### Part C: Basic Shell
+
+STShell is a simple shell program for Linux, designed to provide basic functionality such as running CMD tools, handling
+signals, output redirection, and piping.
 
 ---
 
@@ -34,7 +103,7 @@ system supports the standard libraries and system calls used in the code.
 ## Compilation
 
 To compile the shell program, use the following command in the terminal:
-`gcc -o stshell stshell.c`
+`gcc -o stshell stshell.c` or `make stshell`
 
 This will create an executable file named `stshell`.
 
